@@ -1,0 +1,594 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Account identity — email, anonymous local, and future OAuth/passkeys.
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String?   @unique
+  passwordHash    String?   @map("password_hash")
+  displayName     String?   @map("display_name")
+  locale          String    @default("en-US")
+  timezone        String    @default("UTC")
+  /// anonymous | email | oauth_apple | oauth_google | passkey
+  accountType     String    @default("email") @map("account_type")
+  /// Stable local id for offline anonymous accounts (client-generated UUID).
+  anonymousKey    String?   @unique @map("anonymous_key")
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(3)
+  /// When an anonymous user was upgraded to a cloud account.
+  upgradedAt      DateTime? @map("upgraded_at") @db.Timestamptz(3)
+  /// Optional pointer if this account was merged into another (merge prep).
+  mergedIntoUserId String?  @map("merged_into_user_id") @db.Uuid
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  profile                 Profile?
+  goals                   Goal[]
+  goalHistory             GoalHistory[]
+  movementSessions        MovementSession[]
+  dailyActivities         DailyActivity[]
+  achievements            Achievement[]
+  preference              Preference?
+  syncJobs                SyncJob[]
+  devices                 Device[]
+  auditLogs               AuditLog[]
+  refreshTokens           RefreshToken[]
+  loginAudits             LoginAudit[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  syncRecords             SyncRecord[]
+  syncCursors             SyncCursor[]
+  syncIdempotencyKeys     SyncIdempotencyKey[]
+  syncConflictLogs        SyncConflictLog[]
+  syncMergeHistories      SyncMergeHistory[]
+  syncHistoryEvents       SyncHistoryEvent[]
+  notifications           Notification[]
+  subscriptions           Subscription[]
+  trialGrants             TrialGrant[]
+
+  @@index([deletedAt])
+  @@index([updatedAt])
+  @@index([accountType])
+  @@map("users")
+}
+
+/// Health / body profile for a user.
+model Profile {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @unique @map("user_id") @db.Uuid
+  firstName      String?   @map("first_name") @db.VarChar(40)
+  gender         String
+  age            Int
+  heightCm       Float     @map("height_cm")
+  weightKg       Float     @map("weight_kg")
+  unitSystem     String    @default("metric") @map("unit_system")
+  strideLengthCm Float?    @map("stride_length_cm")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([updatedAt])
+  @@map("profiles")
+}
+
+model Goal {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  type             String    @default("daily_steps")
+  targetValue      Int       @map("target_value")
+  recommendedValue Int?      @map("recommended_value")
+  isCustom         Boolean   @default(false) @map("is_custom")
+  status           String    @default("active")
+  effectiveFrom    DateTime? @map("effective_from") @db.Date
+  effectiveTo      DateTime? @map("effective_to") @db.Date
+  deviceId         String?   @map("device_id") @db.Uuid
+  version          Int       @default(1)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  history GoalHistory[]
+
+  @@index([userId, status])
+  @@index([userId, type, deletedAt])
+  @@index([updatedAt])
+  @@map("goals")
+}
+
+model GoalHistory {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  goalId      String    @map("goal_id") @db.Uuid
+  goalType    String    @map("goal_type")
+  targetValue Float     @map("target_value")
+  finalValue  Float     @map("final_value")
+  finalStatus String    @map("final_status")
+  recordedAt  DateTime  @map("recorded_at") @db.Timestamptz(3)
+  dayKey      String?   @map("day_key") @db.Char(10)
+  deviceId    String?   @map("device_id") @db.Uuid
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([userId, recordedAt])
+  @@index([goalId])
+  @@index([dayKey])
+  @@map("goal_history")
+}
+
+model MovementSession {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  sessionId      String    @unique @map("session_id") @db.Uuid
+  dayKey         String    @map("day_key") @db.Char(10)
+  startedAt      DateTime  @map("started_at") @db.Timestamptz(3)
+  endedAt        DateTime? @map("ended_at") @db.Timestamptz(3)
+  steps          Int       @default(0)
+  distanceMeters Float     @default(0) @map("distance_meters")
+  caloriesKcal   Float     @default(0) @map("calories_kcal")
+  activityType   String?   @map("activity_type")
+  deviceId       String?   @map("device_id") @db.Uuid
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayKey])
+  @@index([userId, startedAt])
+  @@index([updatedAt])
+  @@map("movement_sessions")
+}
+
+model DailyActivity {
+  id                     String    @id @default(uuid()) @db.Uuid
+  userId                 String    @map("user_id") @db.Uuid
+  dayKey                 String    @map("day_key") @db.Char(10)
+  timezoneName           String?   @map("timezone_name")
+  timezoneOffsetMinutes  Int?      @map("timezone_offset_minutes")
+  steps                  Int       @default(0)
+  distanceMeters         Float     @default(0) @map("distance_meters")
+  caloriesKcal           Float     @default(0) @map("calories_kcal")
+  walkingDurationMs      Int       @default(0) @map("walking_duration_ms")
+  runningDurationMs      Int       @default(0) @map("running_duration_ms")
+  activeMinutes          Float     @default(0) @map("active_minutes")
+  averagePaceSecPerKm    Float?    @map("average_pace_sec_per_km")
+  averageSpeedMps        Float?    @map("average_speed_mps")
+  finalized              Boolean   @default(false)
+  sessionIds             String[]  @default([]) @map("session_ids") @db.Uuid
+  deviceId               String?   @map("device_id") @db.Uuid
+  version                Int       @default(1)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayKey])
+  @@index([userId, dayKey])
+  @@index([updatedAt])
+  @@map("daily_activities")
+}
+
+model Achievement {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  achievementKey String    @map("achievement_key")
+  title          String
+  description    String?
+  category       String?
+  status         String    @default("locked")
+  progress       Float     @default(0)
+  unlockedAt     DateTime? @map("unlocked_at") @db.Timestamptz(3)
+  claimedAt      DateTime? @map("claimed_at") @db.Timestamptz(3)
+  deviceId       String?   @map("device_id") @db.Uuid
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementKey])
+  @@index([userId, status])
+  @@index([updatedAt])
+  @@map("achievements")
+}
+
+model Preference {
+  id                     String    @id @default(uuid()) @db.Uuid
+  userId                 String    @unique @map("user_id") @db.Uuid
+  unitSystem             String    @default("metric") @map("unit_system")
+  notificationsEnabled   Boolean   @default(true) @map("notifications_enabled")
+  dailyReminderEnabled   Boolean   @default(true) @map("daily_reminder_enabled")
+  dailyReminderLocalTime String    @default("09:00") @map("daily_reminder_local_time") @db.VarChar(5)
+  themeMode              String    @default("system") @map("theme_mode")
+  analyticsOptIn         Boolean   @default(true) @map("analytics_opt_in")
+  privacyMode            Boolean   @default(false) @map("privacy_mode")
+  demoMode               Boolean   @default(false) @map("demo_mode")
+  trackingEnabled        Boolean   @default(true) @map("tracking_enabled")
+  reduceMotion           Boolean   @default(false) @map("reduce_motion")
+  largeText              Boolean   @default(false) @map("large_text")
+  deviceId               String?   @map("device_id") @db.Uuid
+  version                Int       @default(1)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("preferences")
+}
+
+/// Offline sync queue job mirror (logic in a later sprint).
+model SyncJob {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  jobId         String    @unique @map("job_id") @db.Uuid
+  entityType    String    @map("entity_type")
+  entityId      String    @map("entity_id")
+  operation     String
+  payload       Json      @default("{}")
+  retryCount    Int       @default(0) @map("retry_count")
+  priority      Int       @default(0)
+  jobStatus     String    @default("pending") @map("job_status")
+  lastError     String?   @map("last_error")
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(3)
+  deviceId      String?   @map("device_id") @db.Uuid
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, jobStatus])
+  @@index([nextAttemptAt])
+  @@index([updatedAt])
+  @@map("sync_jobs")
+}
+
+model Device {
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  String    @map("user_id") @db.Uuid
+  /// Client-stable device UUID (unique per physical install).
+  deviceId                String    @map("device_id") @db.Uuid
+  deviceName              String?   @map("device_name")
+  platform                String?
+  appVersion              String?   @map("app_version")
+  locale                  String?   @default("en-US")
+  timezone                String?   @default("UTC")
+  lastSeen                DateTime  @default(now()) @map("last_seen") @db.Timestamptz(3)
+  pushToken               String?   @map("push_token")
+  /// Per-device notification preference flags (JSON object).
+  notificationPreferences Json      @default("{}") @map("notification_preferences")
+  trusted                 Boolean   @default(false)
+  version                 Int       @default(1)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+  loginAudits   LoginAudit[]
+  notifications Notification[]
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+  @@index([userId])
+  @@index([userId, deletedAt])
+  @@index([userId, deletedAt, pushToken])
+  @@index([lastSeen])
+  @@index([pushToken])
+  @@map("devices")
+}
+
+/// Provider-agnostic notification record (immutable content; mutable status).
+model Notification {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  /// Optional target Device row (null = all user devices matching prefs).
+  deviceRowId String?   @map("device_row_id") @db.Uuid
+  type        String
+  title       String
+  body        String
+  payload     Json      @default("{}")
+  /// low | normal | high
+  priority    String    @default("normal")
+  /// pending | queued | sent | failed | cancelled | read
+  status      String    @default("pending")
+  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(3)
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(3)
+  readAt      DateTime? @map("read_at") @db.Timestamptz(3)
+  failureReason String? @map("failure_reason")
+  retryCount  Int       @default(0) @map("retry_count")
+  nextRetryAt DateTime? @map("next_retry_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceRowId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([status])
+  @@index([status, nextRetryAt])
+  @@index([type])
+  @@index([scheduledAt])
+  @@map("notifications")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  deviceId   String    @map("device_row_id") @db.Uuid
+  /// SHA-256 hash of the opaque refresh token (never store plaintext).
+  tokenHash  String    @unique @map("token_hash")
+  familyId   String    @map("family_id") @db.Uuid
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedBy String?   @map("replaced_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model LoginAudit {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  deviceId  String?  @map("device_row_id") @db.Uuid
+  event     String
+  success   Boolean  @default(true)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  requestId String?  @map("request_id")
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([event])
+  @@map("login_audits")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  metadata   Json     @default("{}")
+  requestId  String?  @map("request_id")
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+  @@index([requestId])
+  @@map("audit_logs")
+}
+
+/// Cloud-side syncable entity snapshot (offline-first source of truth for sync).
+model SyncRecord {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id")
+  payload    Json      @default("{}")
+  version    Int       @default(1)
+  deviceId   String?   @map("device_id") @db.Uuid
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@index([userId, updatedAt])
+  @@index([userId, entityType])
+  @@index([userId, deletedAt])
+  @@map("sync_records")
+}
+
+/// Per-device download cursor for incremental sync.
+model SyncCursor {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  deviceId     String   @map("device_id") @db.Uuid
+  cursor       String
+  lastSyncAt   DateTime @default(now()) @map("last_sync_at") @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("sync_cursors")
+}
+
+/// Idempotency keys for upload/batch requests.
+model SyncIdempotencyKey {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  requestId    String   @map("request_id")
+  responseHash String?  @map("response_hash")
+  responseBody Json?    @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, requestId])
+  @@index([expiresAt])
+  @@map("sync_idempotency_keys")
+}
+
+/// Audit trail for detected / resolved conflicts.
+model SyncConflictLog {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @map("user_id") @db.Uuid
+  entityType         String   @map("entity_type")
+  entityId           String   @map("entity_id")
+  conflictType       String   @map("conflict_type")
+  strategy           String
+  originalPayload    Json     @map("original_payload")
+  incomingPayload    Json     @map("incoming_payload")
+  resolvedPayload    Json?    @map("resolved_payload")
+  originalVersion    Int      @map("original_version")
+  incomingVersion    Int      @map("incoming_version")
+  resolvedVersion    Int?     @map("resolved_version")
+  deviceId           String?  @map("device_id") @db.Uuid
+  requestId          String?  @map("request_id")
+  resolved           Boolean  @default(false)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([conflictType])
+  @@map("sync_conflict_logs")
+}
+
+/// Merge history for observability / replay analysis.
+model SyncMergeHistory {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  entityType      String   @map("entity_type")
+  entityId        String   @map("entity_id")
+  strategy        String
+  beforePayload   Json     @map("before_payload")
+  afterPayload    Json     @map("after_payload")
+  deviceId        String?  @map("device_id") @db.Uuid
+  requestId       String?  @map("request_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@map("sync_merge_histories")
+}
+
+/// Per-op sync history (applied / duplicate / replay).
+model SyncHistoryEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  operation  String
+  eventType  String   @map("event_type")
+  version    Int
+  deviceId   String?  @map("device_id") @db.Uuid
+  requestId  String?  @map("request_id")
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([eventType])
+  @@map("sync_history_events")
+}
+
+/// Server-side subscription truth — never trust client entitlement mutations.
+model Subscription {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  plan               String    @default("free")
+  status             String    @default("inactive")
+  startedAt          DateTime  @map("started_at") @db.Timestamptz(3)
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz(3)
+  renewalType        String    @default("none") @map("renewal_type")
+  trialStatus        String    @default("none") @map("trial_status")
+  entitlements       Json      @default("[]")
+  receiptFingerprint String?   @map("receipt_fingerprint")
+  verifiedAt         DateTime? @map("verified_at") @db.Timestamptz(3)
+  billingProvider    String    @default("mock") @map("billing_provider")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+/// One trial grant per account.
+model TrialGrant {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @unique @map("user_id") @db.Uuid
+  durationDays Int       @map("duration_days")
+  startedAt    DateTime  @map("started_at") @db.Timestamptz(3)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  status       String    @default("active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("trial_grants")
+}
