@@ -111,7 +111,7 @@ async function bootstrap(): Promise<void> {
   }
 
   const port = config.get<number>('app.port', 3000);
-  // Bind all interfaces so cloud hosts (Render, Docker) can reach the process.
+  // Bind all interfaces so cloud hosts (Koyeb, Docker, VMs) can reach the process.
   // Local `npm run start:dev` still works via localhost → 0.0.0.0.
   const host = process.env.HOST ?? '0.0.0.0';
   await app.listen(port, host);
