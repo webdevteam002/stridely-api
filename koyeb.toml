@@ -1,0 +1,13 @@
+# Koyeb service hint for GitHub deploy (Free Instance only)
+#
+# In the Koyeb UI: Create Web Service → GitHub → webdevteam002/stridely-api
+# Instance type: Free (nano/free — do NOT select Eco or paid)
+#
+# Build command:
+#   npm ci && npx prisma generate && npm run build
+# Run command:
+#   npx prisma migrate deploy && npm run start:prod
+# Health check path:
+#   /health/live
+#
+# Env vars: see docs/KOYEB_FREE_DEPLOY.md (set in dashboard, never commit secrets)
